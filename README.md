@@ -1,183 +1,230 @@
-<h1 align="center">🌌 <em>&pi;³</em>: Permutation-Equivariant Visual Geometry Learning</h1>
+# π³·¹⁴: Training-Free Acceleration for Visual Geometry Reconstruction
 
-<div align="center">
-    <p>
-        <a href="https://github.com/yyfz">Yifan Wang</a><sup>1*</sup>&nbsp;&nbsp;
-        <a href="https://zhoutimemachine.github.io">Jianjun Zhou</a><sup>123*</sup>&nbsp;&nbsp;
-        <a href="https://www.haoyizhu.site">Haoyi Zhu</a><sup>1</sup>&nbsp;&nbsp;
-        <a href="https://github.com/AmberHeart">Wenzheng Chang</a><sup>1</sup>&nbsp;&nbsp;
-        <a href="https://github.com/yangzhou24">Yang Zhou</a><sup>1</sup>
-        <br>
-        <a href="https://github.com/LiZizun">Zizun Li</a><sup>1</sup>&nbsp;&nbsp;
-        <a href="https://github.com/SOTAMak1r">Junyi Chen</a><sup>1</sup>&nbsp;&nbsp;
-        <a href="https://oceanpang.github.io">Jiangmiao Pang</a><sup>1</sup>&nbsp;&nbsp;
-        <a href="https://cshen.github.io">Chunhua Shen</a><sup>2</sup>&nbsp;&nbsp;
-        <a href="https://tonghe90.github.io">Tong He</a><sup>13†</sup>
-    </p>
-    <p>
-        <sup>1</sup>Shanghai AI Lab &nbsp;&nbsp;&nbsp;
-        <sup>2</sup>ZJU &nbsp;&nbsp;&nbsp;
-        <sup>3</sup>SII
-    </p>
-    <p>
-        <sup>*</sup> Equal Contribution &nbsp;&nbsp;&nbsp;
-        <sup>†</sup> Corresponding Author
-    </p>
-</div>
+Richard Shi · University of Toronto
 
-<p align="center">
-    <a href="https://arxiv.org/abs/2507.13347" target="_blank">
-    <img src="https://img.shields.io/badge/Paper-00AEEF?style=plastic&logo=arxiv&logoColor=white" alt="Paper">
-    </a>
-    <a href="https://yyfz.github.io/pi3/" target="_blank">
-    <img src="https://img.shields.io/badge/Project Page-F78100?style=plastic&logo=google-chrome&logoColor=white" alt="Project Page">
-    </a>
-    <a href="https://huggingface.co/spaces/yyfz233/Pi3" target="_blank">
-    <img src="https://img.shields.io/badge/%F0%9F%A4%97%20Hugging%20Face-Demo-blue" alt="Hugging Face Demo">
-    </a>
-</p>
+This repository explores training-free token merging for visual geometry reconstruction, as described in the [project report](report/report.pdf). Built on [π³ / Pi3X](https://github.com/yyfz/Pi3), it investigates whether reducing the sequence length of global attention can accelerate reconstruction in a permutation-equivariant architecture.
 
-<div align="center">
-    <a href="[PROJECT_PAGE_LINK_HERE]">
-        <img src="assets/main.png" width="90%">
-    </a>
-    <p>
-        <i>&pi;³ reconstructs visual geometry without a fixed reference view, achieving robust, state-of-the-art performance.</i>
-    </p>
-</div>
+The project implements a FastVGGT-inspired baseline and **π³·¹⁴**, a frame clustering approach using K-Medoids. Neither requires retraining. Experiments show faster inference for larger scenes, with substantial reconstruction quality degradation for the proposed method. Smaller scenes can become slower because merging adds overhead.
 
+## Approach
 
-## 📣 Updates
-* **[December 28, 2025]** 🚀 **Pi3X Released!** We have upgraded the model to **Pi3X**. This improved version eliminates grid artifacts (smoother point clouds), offers more precise confidence scoring, supports **conditional injection** (camera pose, intrinsics, depth), and enables **approximate metric scale** reconstruction.
-* **[September 3, 2025]** ⭐️ Training code is updated! See [`training`](https://github.com/yyfz/Pi3/tree/training) branch for details.
-* **[July 29, 2025]** 📈 Evaluation code is released! See [`evaluation`](https://github.com/yyfz/Pi3/tree/evaluation) branch for details.
-* **[July 16, 2025]** 🚀 Hugging Face Demo and inference code are released!
+Pi3X encodes images with a DINOv2 backbone and alternates between attention within individual frames and global attention across frames. This fork applies merging only to the global decoder layers:
 
+1. **Partition:** The baseline (`FastVGGTMerging`) uses region-based sampling and similarity matching. The proposed method (`KMedoidsMerging`) averages token features into frame descriptors and clusters similar frames with K-Medoids.
+2. **Merge:** Average corresponding tokens within each cluster to reduce the sequence processed by attention.
+3. **Unmerge:** Replicate the merged outputs back to their original token positions so the decoder can produce dense predictions at the original resolution.
 
-## ✨ Overview
-We introduce $\pi^3$, a novel feed-forward neural network that revolutionizes visual geometry reconstruction by **eliminating the need for a fixed reference view**. Traditional methods, which rely on a designated reference frame, are often prone to instability and failure if the reference is suboptimal.
+The merge ratio `r` controls the requested fraction of tokens removed. Frame clustering rounds this to a whole number of frames and retains at least one cluster. Merging is disabled by default in `Pi3X`; pass both a positive `merge_ratio` and a reducer class to enable it.
 
-In contrast, $\pi^3$ employs a fully **permutation-equivariant** architecture. This allows it to directly predict affine-invariant camera poses and scale-invariant local point maps from an unordered set of images, breaking free from the constraints of a reference frame. This design makes our model inherently **robust to input orderi
+## Reported results
 
-A key emergent property of our simple, bias-free design is the learning of a dense and structured latent representation of the camera pose manifold. Without complex priors or training schemes, $\pi^3$ achieves **state-of-the-art performance** 🏆 on a wide range of tasks, including camera pose estimation, monocular/video depth estimation, and dense point map estimation.
+The [report](report/report.pdf) evaluates camera pose estimation on Sintel and point map estimation on Neural-NRGBD using an RTX 3060 Laptop GPU with 6 GB VRAM. Both tables are reproduced below in full. The merge ratio `r` defines the requested fraction of tokens removed; ↓ indicates lower is better and ↑ indicates higher is better.
 
-### Introducing Pi3X (Engineering Update)
-Building upon the original framework, we present **Pi3X**, an enhanced version focused on flexibility and reconstruction quality:
-* **Smoother Reconstruction:** We replaced the original output head with a **Convolutional Head**, significantly reducing grid-like artifacts and producing much smoother point clouds.
-* **Flexible Conditioning:** Pi3X supports the optional injection of **camera poses, intrinsics, and depth**. This allows for more controlled reconstruction when partial priors are available.
-* **Reliable Confidence:** We improved how confidence is learned. Instead of approximating a binary mask, the model now predicts continuous quality levels, making the confidence scores significantly more reliable for filtering noise.
-* **Metric Scale:** The model now supports **metric scale reconstruction** (approximate), moving beyond purely scale-invariant predictions.
+### Table 1: Camera pose estimation on Sintel
 
-Overall, Pi3X offers slightly better reconstruction quality than the original $\pi^3$ while supporting a wider range of modal inputs.
+ATE is Absolute Trajectory Error; RPE-t and RPE-r are Relative Pose Error for translation and rotation, respectively.
 
-## 🚀 Quick Start
+| Method | ATE ↓ | RPE-t ↓ | RPE-r ↓ | Time (s) ↓ |
+| --- | ---: | ---: | ---: | ---: |
+| π³ | 0.125 | 0.041 | 0.294 | 384.871 |
+| Baseline (r = 0.3) | 0.587 | 0.353 | 4.3142 | 289.368 |
+| Baseline (r = 0.6) | 0.256 | 0.174 | 1.159 | 231.316 |
+| Baseline (r = 0.9) | 0.121 | 0.058 | 0.443 | 227.268 |
+| π³·¹⁴ (r = 0.3) | 0.660 | 0.244 | 4.631 | 252.742 |
+| π³·¹⁴ (r = 0.6) | 0.649 | 0.212 | 3.789 | 203.870 |
+| π³·¹⁴ (r = 0.9) | 0.595 | 0.279 | 3.010 | 196.516 |
 
-### 1. Clone & Install Dependencies
-First, clone the repository and install the required packages.
-```bash
-git clone https://github.com/yyfz/Pi3.git
-cd Pi3
-pip install -r requirements.txt
-```
+### Table 2: Point map estimation on Neural-NRGBD
 
-### 2\. Run Inference from Command Line
+Acc. is Accuracy, Comp. is Completion, and N.C. is Normal Consistency. Mean and median values are reported for both sparse and dense sampling.
 
-Try our example inference script. You can run it on a directory of images or a video file.
+| View | Method | Acc. mean ↓ | Acc. median ↓ | Comp. mean ↓ | Comp. median ↓ | N.C. mean ↑ | N.C. median ↑ | Time (s) ↓ |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| Sparse | π³ | 0.030 | 0.018 | 0.032 | 0.016 | 0.908 | 0.994 | 20.603 |
+| Sparse | Baseline (r = 0.3) | 0.224 | 0.181 | 0.549 | 0.440 | 0.604 | 0.649 | 21.396 |
+| Sparse | Baseline (r = 0.6) | 0.240 | 0.187 | 0.394 | 0.321 | 0.656 | 0.742 | 21.758 |
+| Sparse | Baseline (r = 0.9) | 0.062 | 0.039 | 0.084 | 0.050 | 0.829 | 0.963 | 21.872 |
+| Sparse | π³·¹⁴ (r = 0.3) | 0.250 | 0.227 | 0.678 | 0.631 | 0.625 | 0.674 | 21.852 |
+| Sparse | π³·¹⁴ (r = 0.6) | 0.240 | 0.198 | 0.774 | 0.667 | 0.624 | 0.665 | 22.345 |
+| Sparse | π³·¹⁴ (r = 0.9) | 0.246 | 0.206 | 0.726 | 0.627 | 0.632 | 0.686 | 22.474 |
+| Dense | π³ | 0.012 | 0.007 | 0.014 | 0.006 | 0.883 | 0.986 | 140.167 |
+| Dense | Baseline (r = 0.3) | 0.233 | 0.209 | 0.730 | 0.575 | 0.580 | 0.628 | 124.048 |
+| Dense | Baseline (r = 0.6) | 0.166 | 0.116 | 0.440 | 0.368 | 0.635 | 0.723 | 108.145 |
+| Dense | Baseline (r = 0.9) | 0.037 | 0.025 | 0.030 | 0.013 | 0.815 | 0.957 | 102.612 |
+| Dense | π³·¹⁴ (r = 0.3) | 0.268 | 0.241 | 0.785 | 0.651 | 0.581 | 0.622 | 112.408 |
+| Dense | π³·¹⁴ (r = 0.6) | 0.230 | 0.208 | 0.755 | 0.613 | 0.580 | 0.614 | 100.113 |
+| Dense | π³·¹⁴ (r = 0.9) | 0.248 | 0.225 | 0.758 | 0.596 | 0.577 | 0.616 | 90.964 |
 
-If the automatic download from Hugging Face is slow, you can download the model checkpoint manually from [Pi3](https://huggingface.co/yyfz233/Pi3/resolve/main/model.safetensors) or [Pi3X](https://huggingface.co/yyfz233/Pi3X/resolve/main/model.safetensors) and specify its local path using the `--ckpt` argument.
+These are historical measurements from the report, not benchmarks run by the setup below. The report names the base model π³; the merging implementation in this checkout is in `Pi3X`. This checkout does not include the Sintel/NRGBD evaluation datasets or a complete benchmark evaluation pipeline.
+
+### Results summary
+
+At `r = 0.9`, π³·¹⁴ reduced inference time from 384.871 s to 196.516 s on Sintel (1.96× speedup) and from 140.167 s to 90.964 s on dense NRGBD (1.54× speedup). These gains came with substantial accuracy losses: Sintel ATE increased from 0.125 to 0.595, while dense NRGBD mean accuracy error increased from 0.012 to 0.248.
+
+The FastVGGT-inspired baseline offered a better balance at `r = 0.9`: on Sintel, ATE was 0.121 versus 0.125 for the original model, although both relative pose errors increased; on dense NRGBD, reconstruction errors increased but remained substantially below those of π³·¹⁴. Its inference times were 227.268 s and 102.612 s, respectively.
+
+Merging did not help sparse NRGBD scenes: every tested merging configuration was slower than the original model's 20.603 s. Overall, the results support token merging as a way to accelerate larger scenes, but frame clustering needs further work to preserve reconstruction quality, and the merge ratio must be selected with the task and input size in mind.
+
+## Setup
+
+Use Python 3.10 or 3.11 and an NVIDIA GPU with a CUDA-enabled PyTorch installation for the supplied inference and demo workflows. Although some scripts accept `--device cpu`, several execution paths explicitly use CUDA, so that flag does not provide a complete CPU workflow. Memory requirements depend on the number of frames and image resolution; the report's 6 GB GPU is not a guarantee that every example fits.
 
 ```bash
-# Run with the default example video
-# python example.py    # Inference with Pi3 (Original)
-python example_mm.py   # [New] Inference with Pi3X (Recommended)
+git clone https://github.com/rshift8/Pi3.14.git
+cd Pi3.14
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install --upgrade pip
+python -m pip install -r requirements.txt
 
-# Run on your own data (image folder or .mp4 file)
-# python example.py --data_path <path/to/data>     # Pi3
-python example_mm.py --data_path <path/to/data>    # Pi3X
+# Verify that this environment can use the GPU.
+python -c "import torch; print('PyTorch:', torch.__version__); print('CUDA available:', torch.cuda.is_available())"
 ```
 
-### Advanced: Multimodal Conditioning (Pi3X Only)
-To utilize additional input modalities (e.g., camera poses, intrinsics, or depth), please refer to example_mm.py for specific data formatting details.
+The requirements pin PyTorch 2.5.1, torchvision 0.20.1, and NumPy 1.26.4. They also install `scikit-learn-extra`, which supplies K-Medoids and is imported by the reducer module even when merging is disabled. Run the commands from the repository root so the local `pi3` package and bundled example paths resolve. If the CUDA check prints `False`, resolve the GPU driver/PyTorch installation before running the CUDA examples.
 
-Below is an example comparing reconstruction with and without condition injection. You can compare the resulting point clouds to observe the improvements brought by multimodal inputs.
-``` bash
-# 1. Inference WITH conditioning (poses, intrinsics, etc.)
-python example_mm.py --data_path examples/room/rgb --conditions_path examples/room/condition.npz --save_path examples/room_with_conditions.ply
+The first model load downloads pretrained weights from Hugging Face and requires internet access. The Pi3X scripts use `yyfz233/Pi3X`; the original Pi3 script uses `yyfz233/Pi3`. For scripts with `--ckpt`, you can instead supply the matching local `model.safetensors` checkpoint.
 
-# 2. Inference WITHOUT conditioning (image only)
-python example_mm.py --data_path examples/room/rgb --save_path examples/room_no_conditions.ply
-```
+## Execution
 
-**Optional Arguments:**
-
-  * `--data_path`: Path to the input image directory or a video file. (Default: `examples/skating.mp4`)
-  * `--save_path`: Path to save the output `.ply` point cloud. (Default: `examples/result.ply`)
-  * `--interval`: Frame sampling interval. (Default: `1` for images, `10` for video)
-  * `--ckpt`: Path to a custom model checkpoint file.
-  * `--device`: Device to run inference on. (Default: `cuda`)
-
-### 3\. Run with Gradio Demo
-
-You can also launch a local Gradio demo for an interactive experience.
+### Interactive reconstruction with π³·¹⁴
 
 ```bash
-# Install demo-specific requirements
-pip install -r requirements_demo.txt
+python -m pip install -r requirements_demo.txt
+python demo_gradio_mm.py
+```
 
-# Launch the demo
+Open the URL printed by Gradio, upload images or a video, and run reconstruction. This demo currently loads **Pi3X with `KMedoidsMerging` and `merge_ratio=0.9`**, disables multimodal conditioning, and updates the patch dimensions for the input resolution. Change the model initialization near the end of `demo_gradio_mm.py` to select `FastVGGTMerging`, another ratio, or an unmerged model. Both demo scripts launch with `share=True`, which also requests a public Gradio sharing link.
+
+For the original Pi3 demo:
+
+```bash
 python demo_gradio.py
 ```
 
+### Run token merging from Python
 
-## 🛠️ Detailed Usage
+The command-line scripts do not expose a merge-ratio flag. The following complete example loads the bundled house images, enables the proposed reducer, and saves a filtered colored point cloud to `output/house_kmedoids.ply`:
 
-### Model Input & Output
-
-The model takes a tensor of images and outputs a dictionary containing the reconstructed geometry.
-
-  * **Input**: A `torch.Tensor` of shape $B \times N \times 3 \times H \times W$ with pixel values in the range `[0, 1]`.
-  * **Output**: A `dict` with the following keys:
-      * `points`: Global point cloud unprojected by `local points` and `camerae_poses` (`torch.Tensor`, $B \times N \times H \times W \times 3$).
-      * `local_points`: Per-view local point maps (`torch.Tensor`,  $B \times N \times H \times W \times 3$).
-      * `conf`: Confidence scores for local points (Raw confidence logits. Apply `torch.sigmoid()` to obtain probabilities in `[0, 1]`, higher is better) (`torch.Tensor`,  $B \times N \times H \times W \times 1$).
-      * `camera_poses`: Camera-to-world transformation matrices (`4x4` in OpenCV format) (`torch.Tensor`,  $B \times N \times 4 \times 4$).
-
-### Example Code Snippet
-
-Here is a minimal example of how to run the model on a batch of images.
-
-```python
+```bash
+python - <<'PYCODE'
+from pathlib import Path
 import torch
-# from pi3.models.pi3 import Pi3            # old version
-from pi3.models.pi3x import Pi3X            # new version (Recommended)
-from pi3.utils.basic import load_images_as_tensor # Assuming you have a helper function
+from pi3.models.pi3x import Pi3X
+from pi3.models.layers.reducer import KMedoidsMerging
+from pi3.utils.basic import load_multimodal_data, write_ply
+from pi3.utils.geometry import depth_edge
 
-# --- Setup ---
-device = 'cuda' if torch.cuda.is_available() else 'cpu'
-# model = Pi3.from_pretrained("yyfz233/Pi3").to(device).eval()
-model = Pi3X.from_pretrained("yyfz233/Pi3X").to(device).eval()
-# or download checkpoints from `https://huggingface.co/yyfz233/Pi3/resolve/main/model.safetensors`
+if not torch.cuda.is_available():
+    raise RuntimeError("This example requires a CUDA-enabled GPU.")
 
-# --- Load Data ---
-# Load a sequence of N images into a tensor
-# imgs shape: (N, 3, H, W).
-# imgs value: [0, 1]
-imgs = load_images_as_tensor('path/to/your/data', interval=10).to(device)
+device = torch.device("cuda")
+model = Pi3X.from_pretrained(
+    "yyfz233/Pi3X",
+    merge_ratio=0.9,
+    token_reducer_class=KMedoidsMerging,
+)
+model.disable_multimodal()
+model = model.to(device).eval()
 
-# --- Inference ---
-print("Running model inference...")
-# Use mixed precision for better performance on compatible GPUs
-dtype = torch.bfloat16 if torch.cuda.is_available() and torch.cuda.get_device_capability()[0] >= 8 else torch.float16
+# The loader returns (N, 3, H, W); the model expects (B, N, 3, H, W).
+imgs, _ = load_multimodal_data("examples/house", interval=1, device=device)
+h, w = imgs.shape[-2:]
+model.update_patch_dimensions(patch_width=w // 14, patch_height=h // 14)
+dtype = torch.bfloat16 if torch.cuda.get_device_capability()[0] >= 8 else torch.float16
+with torch.inference_mode(), torch.amp.autocast("cuda", dtype=dtype):
+    result = model(imgs[None])
 
-with torch.no_grad():
-    with torch.amp.autocast('cuda', dtype=dtype):
-        # Add a batch dimension -> (1, N, 3, H, W)
-        results = model(imgs[None])
-
-print("Reconstruction complete!")
-# Access outputs: results['points'], results['camera_poses'] and results['local_points'].
+mask = (torch.sigmoid(result["conf"][..., 0]) > 0.1)
+mask &= ~depth_edge(result["local_points"][..., 2], rtol=0.03)
+mask = mask[0]
+output = Path("output/house_kmedoids.ply")
+output.parent.mkdir(parents=True, exist_ok=True)
+write_ply(
+    result["points"][0][mask].cpu(),
+    imgs.permute(0, 2, 3, 1)[mask].cpu(),
+    str(output),
+)
+print(f"Saved {output}")
+PYCODE
 ```
 
+Replace `KMedoidsMerging` with `FastVGGTMerging` (including the import) to try the baseline. For an unmerged comparison, omit both merging arguments when loading Pi3X. Keep the input data, sampling interval, and checkpoint fixed across comparisons. Use batch size 1 for the frame clustering implementation. Always update the patch dimensions after loading images; the reducers rely on the actual patch grid and five register tokens per frame.
+
+### Original Pi3 command-line inference
+
+```bash
+# Bundled video; writes examples/result.ply.
+python example.py
+
+# Image directory; writes a colored PLY point cloud.
+mkdir -p output
+python example.py --data_path examples/house --save_path output/house_pi3.ply --device cuda
+
+# Use a local checkpoint matching the original Pi3 model.
+python example.py --data_path examples/house --ckpt /path/to/Pi3/model.safetensors --save_path output/house_pi3.ply
+```
+
+| Argument | Meaning | Default |
+| --- | --- | --- |
+| `--data_path` | Image directory or `.mp4` video | `examples/skating.mp4` |
+| `--save_path` | Output point cloud path | `examples/result.ply` |
+| `--interval` | Sample every nth image/frame | 1 for image directories, 10 for `.mp4` |
+| `--ckpt` | Local model checkpoint | Download pretrained weights |
+| `--device` | Inference device | `cuda` |
+
+Increase `--interval` to reduce the number of frames if GPU memory is insufficient.
+
+### Runtime characterization
+
+```bash
+python runtime_characterization.py --data_path examples/house --device cuda --save_dir output/profile
+```
+
+This profiles one Pi3X forward pass and writes `output/profile/summary.txt` (operator timing and memory statistics) and `output/profile/trace.json` (a Chrome-compatible trace). It also accepts `--interval`, `--ckpt`, and `--conditions_path`. It does not save a point cloud or enable token merging by default. To profile a reducer, update its model initialization using the merging arguments and patch-dimension update shown above. Profiling includes instrumentation overhead and does not reproduce the report's evaluation metrics or benchmark timing procedure.
+
+### Multimodal inputs and current script limitations
+
+Pi3X supports optional camera poses, intrinsics, and depth. The scripts that accept `--conditions_path` expect an `.npz` containing all three keys:
+
+| Key | Shape before loading | Convention |
+| --- | --- | --- |
+| `poses` | `(N, 4, 4)` | OpenCV camera-to-world matrices |
+| `intrinsics` | `(N, 3, 3)` | Camera intrinsics in pixel coordinates |
+| `depths` | `(N, H, W)` | Depth maps; invalid values set to 0 |
+
+The loader samples the conditions with the images, resizes depth maps, and rescales intrinsics. An example is included at `examples/room/condition.npz` with RGB images in `examples/room/rgb`.
+
+- `example_mm.py` currently passes an unbatched image tensor to Pi3X and later indexes images as though they were batched. Before using that script, add the batch dimension to the loaded images (e.g. `imgs = imgs[None]` immediately after loading). The Python example above uses the correct model input shape.
+- `residual_characterization.py` runs inference and then reads `residual_stats.pkl` from the working directory. The current model does not write that file, and the script's `--save_path` is unused, so it is not a complete residual-statistics collection workflow.
+- `example_vo.py` is an experimental visual-odometry entry point and is separate from the report's evaluation workflow.
+
+## Model outputs
+
+Pi3X accepts RGB tensors of shape `(B, N, 3, H, W)` with values in `[0, 1]` and returns:
+
+| Key | Shape | Meaning |
+| --- | --- | --- |
+| `points` | `(B, N, H, W, 3)` | Global 3D point maps |
+| `local_points` | `(B, N, H, W, 3)` | Per-view local 3D point maps |
+| `conf` | `(B, N, H, W, 1)` | Confidence logits; apply `torch.sigmoid` |
+| `camera_poses` | `(B, N, 4, 4)` | OpenCV camera-to-world transformations |
+
+## Repository guide
+
+| Path | Purpose |
+| --- | --- |
+| [report/report.pdf](report/report.pdf) | Project method, experiments, and discussion |
+| [pi3/models/layers/reducer.py](pi3/models/layers/reducer.py) | Reducer interface, FastVGGT-inspired baseline, and K-Medoids merging |
+| [pi3/models/layers/attention.py](pi3/models/layers/attention.py) | Merge → attention → unmerge integration |
+| [pi3/models/pi3x.py](pi3/models/pi3x.py) | Pi3X model and global-layer merging configuration |
+| [demo_gradio_mm.py](demo_gradio_mm.py) | Interactive Pi3X reconstruction with π³·¹⁴ enabled |
+| [runtime_characterization.py](runtime_characterization.py) | PyTorch runtime and memory profiling |
+| [examples](examples) | Bundled images, videos, and conditioning example |
+
+## Upstream attribution
+
+This project extends the [Pi3 repository](https://github.com/yyfz/Pi3) by Yifan Wang and collaborators. The pretrained models and original reconstruction architecture are their work. The report and token merging experiments in this fork are by Richard Shi. The baseline adapts ideas from [FastVGGT](https://arxiv.org/abs/2509.02560).
 
 ## 🙏 Acknowledgements
 
